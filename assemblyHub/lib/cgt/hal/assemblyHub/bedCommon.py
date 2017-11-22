@@ -149,16 +149,3 @@ def untabifyBed(bedPath):
     for line in lines:
         bedFile.write(line)
 
-#def main():
-#    usage = "%prog <in.bed> <out.bed> maxIntron"
-#    parser = OptionParser(usage=usage)
-#    options, args = parser.parse_args()
-#    if len(args) < 3:
-#        parser.error('Required 3 arguments. Only see %d.\n' %len(args))
-#    infile = args[0]
-#    outfile = args[1]
-#    maxIntron = int(args[2])
-#    filterLongIntrons(infile, outfile, maxIntron)
-#
-#if __name__ == '__main__':
-#    main()

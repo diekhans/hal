@@ -8,3 +8,4 @@ lib/*
 /bin
 /lib
 chain/test
+.emacs.bak
