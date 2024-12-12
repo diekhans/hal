@@ -4,7 +4,7 @@ modObjDir = ${objDir}/api
 
 libHal_srcs = $(wildcard impl/*.cpp) $(wildcard hdf5_impl/*.cpp) $(wildcard mmap_impl/*.cpp)
 ifdef ENABLE_UDC
-  libHal_c_srcs = impl/udc2.c
+  libHal_c_srcs = impl/gb_udc.c
 endif
 libHal_objs = ${libHal_srcs:%.cpp=${modObjDir}/%.o} ${libHal_c_srcs:%.c=${modObjDir}/%.o}
 
@@ -33,11 +33,11 @@ halApiTest_progs = ${halApiTest_names:%=${binDir}/%}
 $(foreach prog,${halApiTest_names},$(eval ${prog}_objs = ${modObjDir}/tests/${prog}.o ${halApiTestSupportLibs}))
 
 ifdef ENABLE_UDC
-   udc2Tests_srcs = $(wildcard tests/udc2Test.c)
-   udc2Tests_objs = ${udc2Tests_srcs:%.c=${modObjDir}/%.o}
+   gb_udcTests_srcs = $(wildcard tests/gb_udcTest.c)
+   gb_udcTests_objs = ${gb_udcTests_srcs:%.c=${modObjDir}/%.o}
 endif
 srcs = ${libHal_srcs} ${halApiTests_srcs} ${halHdf5Tests_srcs}
-c_srcs = ${udc2Tests_srcs}
+c_srcs = ${gb_udcTests_srcs}
 objs = ${srcs:%.cpp=${modObjDir}/%.o} ${c_srcs:%.c=${modObjDir}/%.o}
 depends = ${srcs:%.cpp=%.depend} ${c_srcs:%.c=%.depend}
 
@@ -46,7 +46,7 @@ inclSpec += -Ihdf5_impl -Immap_impl
 ifdef ENABLE_UDC
    # FIXME: standarize var names
    inclSpec += -I${KENTSRC}/inc -I${KENTSRC}/htslib
-   progs +=  ${binDir}/udc2Tests
+   progs +=  ${binDir}/gb_udcTests
 endif
 
 
@@ -54,9 +54,9 @@ all : libs progs
 libs: ${libHal} ${halApiTestSupportLibs} 
 progs: ${progs}
 
-# only udc2.c should include kent .h files, to preven conflicts with older versions of
+# only gb_udc.c should include kent .h files, to preven conflicts with older versions of
 # phast
-${modObjDir}/impl/udc2.o: impl/udc2.c
+${modObjDir}/impl/gb_udc.o: impl/gb_udc.c
 	@mkdir -p $(dir $@)
 	${CC} -MM -MT $@ ${CFLAGS} ${UDCCFLAGS} ${inclSpec} -c $< >$*.depend
 	${CC} ${CFLAGS} ${inclSpec} -c $< -o $@

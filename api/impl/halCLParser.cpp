@@ -10,7 +10,7 @@
 #include <cassert>
 #include <iostream>
 #ifdef ENABLE_UDC
-#include "udc2.h"
+#include "halGbUdc.h"
 #endif
 
 using namespace std;
@@ -147,10 +147,10 @@ void CLParser::parseOptions(int argc, char **argv) {
 #ifdef ENABLE_UDC
     const string &udcCacheDir = getOption<const string &>("udcCacheDir");
     if (not udcCacheDir.empty()) {
-        udc2SetDefaultDir(const_cast<char *>(udcCacheDir.c_str()));
+        halGbUdcSetDefaultDir(const_cast<char *>(udcCacheDir.c_str()));
     }
     if (get<bool>("udcVerbose")) {
-        udc2VerboseSetLevel(100);
+        halGbUdcVerboseSetLevel(100);
     }
 #endif
 }

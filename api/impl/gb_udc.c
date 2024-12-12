@@ -35,22 +35,28 @@
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <curl/curl.h>
-#include "common.h"
-#include "hash.h"
+#include "gb_common.h"
+#include "gb_bits.h"
+#include "gb_hash.h"
+#include "gb_hex.h"
+#if 0  // drop for HAL
 #include "obscure.h"
-#include "bits.h"
-#include "linefile.h"
 #include "portable.h"
-#include "sig.h"
 #include "cheapcgi.h"
-#include "udc2.h"
-#include "hex.h"
+#endif
+#include "gb_udc.h"
 #include <openssl/sha.h>
+
+#define udcBitmapSig 0x4187E2F6
+/* Signature for a url data cache bitmap file.
+ * in sig.h in GB tree. */
+
+
 
 /* The stdio stream we'll use to output statistics on file i/o.  Off by default. */
 static FILE *udcLogStream = NULL;
 
-void udc2SetLog(FILE *fp)
+void gb_udcSetLog(FILE *fp)
 /* Turn on logging of file i/o. 
  * For each UDC file two lines are written.  One line for the open, and one line for the close. 
  * The Open line just has the URL being opened.
@@ -90,7 +96,7 @@ struct ios
 /* All fetch requests are rounded up to block size. */
 
 typedef int (*UdcDataCallback)(char *url, bits64 offset, int size, void *buffer,
-			       struct udc2File *file);
+			       struct gb_udcFile *file);
 /* Type for callback function that fetches file data. */
 
 struct udcRemoteFileInfo
@@ -117,10 +123,10 @@ struct udcProtocol
     struct raBuffer *pending;   /* Pending buffer for FTP */
 };
 
-struct udc2File
+struct gb_udcFile
 /* A file handle for our caching system. */
     {
-    struct udc2File *next;	/* Next in list. */
+    struct gb_udcFile *next;	/* Next in list. */
     char *url;			/* Name of file - includes protocol */
     char *protocol;		/* The URL up to the first colon.  http: etc. */
     struct udcProtocol *prot;	/* Protocol specific data and methods. */
@@ -223,7 +229,7 @@ if (stringIn("..", url) || stringIn("~", url) || stringIn("//", url) ||
 return url;
 }
 
-static int udcDataViaLocal(char *url, bits64 offset, int size, void *buffer, struct udc2File *file)
+static int udcDataViaLocal(char *url, bits64 offset, int size, void *buffer, struct gb_udcFile *file)
 /* Fetch a block of data of given size into buffer using the http: protocol.
 * Returns number of bytes actually read.  Does an errAbort on
 * error.  Typically will be called with size in the 8k - 64k range. */
@@ -261,7 +267,7 @@ return TRUE;
 /********* Section for transparent file protocol **********/
 
 static int udcDataViaTransparent(char *url, bits64 offset, int size, void *buffer,
-				 struct udc2File *file)
+				 struct gb_udcFile *file)
 /* Fetch a block of data of given size into buffer using the http: protocol.
 * Returns number of bytes actually read.  Does an errAbort on
 * error.  Typically will be called with size in the 8k - 64k range. */
@@ -280,7 +286,8 @@ return FALSE;
 
 /********* Section for slow local file protocol - simulates network... **********/
 
-static int udcDataViaSlow(char *url, bits64 offset, int size, void *buffer, struct udc2File *file)
+#if 0
+static int udcDataViaSlow(char *url, bits64 offset, int size, void *buffer, struct gb_udcFile *file)
 /* Fetch a block of data of given size into buffer using the http: protocol.
 * Returns number of bytes actually read.  Does an errAbort on
 * error.  Typically will be called with size in the 8k - 64k range. */
@@ -328,30 +335,31 @@ retInfo->updateTime = status.st_mtime;
 retInfo->size = status.st_size;
 return TRUE;
 }
+#endif
 
 /********* Section for http protocol **********/
 
 static char *defaultDir = "/tmp/udcCache";
 
-char *udc2DefaultDir()
+char *gb_udcDefaultDir()
 /* Get default directory for cache */
 {
 return defaultDir;
 }
 
-void udc2SetDefaultDir(char *path)
+void gb_udcSetDefaultDir(char *path)
 /* Set default directory for cache.  */
 {
 defaultDir = cloneString(path);
 }
 
-void udc2DisableCache()
-/* Switch off caching. Re-enable with udc2SetDefaultDir */
+void gb_udcDisableCache()
+/* Switch off caching. Re-enable with gb_udcSetDefaultDir */
 {
 defaultDir = NULL;
 }
 
-bool udc2CacheEnabled()
+bool gb_udcCacheEnabled()
 /* TRUE if caching is activated */
 {
 return (defaultDir != NULL);
@@ -402,7 +410,7 @@ writeData->iNext += inSize;
 return inSize;
 }
 
-static int udcDataViaHttp(char *url, bits64 offset, int size, void *buffer, struct udc2File *file)
+static int udcDataViaHttp(char *url, bits64 offset, int size, void *buffer, struct gb_udcFile *file)
 /* Fetch a block of data of given size into buffer using url's protocol,
  * which must be http, or https.  Returns number of bytes actually read.
  * Does an errAbort on error.
@@ -623,7 +631,7 @@ else
 
 /********* Section for ftp protocol **********/
 
-static int udcDataViaFtp(char *url, bits64 offset, int size, void *buffer, struct udc2File *file)
+static int udcDataViaFtp(char *url, bits64 offset, int size, void *buffer, struct gb_udcFile *file)
 /* FTP is disable, as it was tricky to get restart without close working
  * in CURL for FTP and HAL random access will be very slow. */
 {
@@ -641,21 +649,21 @@ return TRUE;
 
 /********* Non-protocol-specific bits **********/
 
-boolean udc2FastReadString(struct udc2File *f, char buf[256])
+boolean gb_udcFastReadString(struct gb_udcFile *f, char buf[256])
 /* Read a string into buffer, which must be long enough
  * to hold it.  String is in 'writeString' format. */
 {
 UBYTE bLen;
 int len;
-if (!udc2ReadOne(f, bLen))
+if (!gb_udcReadOne(f, bLen))
     return FALSE;
 if ((len = bLen)> 0)
-    udc2MustRead(f, buf, len);
+    gb_udcMustRead(f, buf, len);
 buf[len] = 0;
 return TRUE;
 }
 
-static char *fileNameInCacheDir(struct udc2File *file, char *fileName)
+static char *fileNameInCacheDir(struct gb_udcFile *file, char *fileName)
 /* Return the name of a file in the cache dir, from the cache root directory on down.
  * Do a freeMem on this when done. */
 {
@@ -668,7 +676,7 @@ memcpy(path+dirLen+1, fileName, nameLen);
 return path;
 }
 
-static void udcNewCreateBitmapAndSparse(struct udc2File *file, 
+static void udcNewCreateBitmapAndSparse(struct gb_udcFile *file, 
                                         bits64 remoteUpdate, bits64 remoteSize, bits32 version, bits32 blockSize)
 /* Create a new bitmap file around the given remoteUpdate time. */
 {
@@ -795,9 +803,7 @@ if (sameString(upToColon, "local"))
     }
 else if (sameString(upToColon, "slow"))
     {
-    prot->fetchData = udcDataViaSlow;
-    prot->fetchInfo = udcInfoViaSlow;
-    prot->type = "slow";
+    errAbort("slow: not supported for HAL");
     }
 else if (sameString(upToColon, "http") || sameString(upToColon, "https"))
     {
@@ -839,7 +845,7 @@ if (prot != NULL)
     }
 }
 
-static void setInitialCachedDataBounds(struct udc2File *file, boolean useCacheInfo, bits32 blockSize)
+static void setInitialCachedDataBounds(struct gb_udcFile *file, boolean useCacheInfo, bits32 blockSize)
 /* Open up bitmap file and read a little bit of it to see if cache is stale,
  * and if not to see if the initial part is cached.  Sets the data members
  * startData, and endData.  If the case is stale it makes fresh empty
@@ -945,7 +951,7 @@ while ((c = *s++) != 0)
 return output;
 }
 
-void udc2ParseUrlFull(char *url, char **retProtocol, char **retAfterProtocol, char **retColon,
+void gb_udcParseUrlFull(char *url, char **retProtocol, char **retAfterProtocol, char **retColon,
                       char **retAuth)
 /* Parse the URL into components that udc treats separately.
  * *retAfterProtocol is Q-encoded to keep special chars out of filenames.  
@@ -988,12 +994,12 @@ afterProtocol = qEncode(afterProtocol);
 *retColon = colon;
 }
 
-void udc2ParseUrl(char *url, char **retProtocol, char **retAfterProtocol, char **retColon)
+void gb_udcParseUrl(char *url, char **retProtocol, char **retAfterProtocol, char **retColon)
 /* Parse the URL into components that udc treats separately.
  * *retAfterProtocol is Q-encoded to keep special chars out of filenames.  
  * Free  *retProtocol and *retAfterProtocol but not *retColon when done. */
 {
-udc2ParseUrlFull(url, retProtocol, retAfterProtocol, retColon, NULL);
+gb_udcParseUrlFull(url, retProtocol, retAfterProtocol, retColon, NULL);
 }
 
 static void addElementToDy(struct dyString *dy, char *name)
@@ -1036,7 +1042,7 @@ addElementToDy(dy, name);
 return dyStringCannibalize(&dy);
 }
 
-static void udcPathAndFileNames(struct udc2File *file, char *cacheDir, char *protocol, char *afterProtocol)
+static void udcPathAndFileNames(struct gb_udcFile *file, char *cacheDir, char *protocol, char *afterProtocol)
 /* Initialize udcFile path and names */
 {
 if (cacheDir==NULL)
@@ -1068,7 +1074,7 @@ udcBitmapClose(&bits);
 return ret;
 }
 
-struct udc2File *udc2FileMayOpen(char *url, char *cacheDir, bits32 blockSize)
+struct gb_udcFile *gb_udcFileMayOpen(char *url, char *cacheDir, bits32 blockSize)
 /* Open up a cached file. cacheDir may be null in which case udcDefaultDir() will be
  * used.  Return NULL if file doesn't exist. 
  * Caching is inactive if defaultDir is NULL or the protocol is "transparent".
@@ -1076,7 +1082,7 @@ struct udc2File *udc2FileMayOpen(char *url, char *cacheDir, bits32 blockSize)
  */
 {
 if (cacheDir == NULL)
-    cacheDir = udc2DefaultDir();
+    cacheDir = gb_udcDefaultDir();
 if (blockSize == 0)
     blockSize = defaultUdcBlockSize;
 verbose(4, "udcfileOpen(%s, %s, %d)\n", url, cacheDir, blockSize);
@@ -1085,7 +1091,7 @@ if (udcLogStream)
 /* Parse out protocol.  Make it "transparent" if none specified. */
 char *protocol = NULL, *afterProtocol = NULL, *colon;
 boolean isTransparent = FALSE;
-udc2ParseUrl(url, &protocol, &afterProtocol, &colon);
+gb_udcParseUrl(url, &protocol, &afterProtocol, &colon);
 if (!colon)
     {
     freeMem(protocol);
@@ -1103,8 +1109,8 @@ struct udcRemoteFileInfo info;
 ZeroVar(&info);
 if (!isTransparent)
     {
-    if (udc2CacheEnabled())
-        useCacheInfo = (udc2CacheAge(url, cacheDir) < udc2CacheTimeout());
+    if (gb_udcCacheEnabled())
+        useCacheInfo = (gb_udcCacheAge(url, cacheDir) < gb_udcCacheTimeout());
     if (!useCacheInfo)
 	{
 	if (!prot->fetchInfo(url, &info, prot))
@@ -1118,7 +1124,7 @@ if (!isTransparent)
     }
 
 /* Allocate file object and start filling it in. */
-struct udc2File *file;
+struct gb_udcFile *file;
 AllocVar(file);
 file->url = cloneString(url);
 file->protocol = protocol;
@@ -1144,12 +1150,12 @@ else
 	file->size = info.size;
 	// update cache file mod times, so if we're caching we won't do this again
 	// until the timeout has expired again:
-    	if (udc2CacheTimeout() > 0 && udc2CacheEnabled() && fileExists(file->bitmapFileName))
+    	if (gb_udcCacheTimeout() > 0 && gb_udcCacheEnabled() && fileExists(file->bitmapFileName))
 	    (void)maybeTouchFile(file->bitmapFileName);
 
 	}
 
-    if (udc2CacheEnabled())
+    if (gb_udcCacheEnabled())
         {
         /* Make directory. */
         makeDirsOnPath(file->cacheDir);
@@ -1165,23 +1171,23 @@ freeMem(afterProtocol);
 return file;
 }
 
-struct udc2File *udc2FileOpen(char *url, char *cacheDir, bits32 blockSize)
+struct gb_udcFile *gb_udcFileOpen(char *url, char *cacheDir, bits32 blockSize)
 /* Open up a cached file.  cacheDir may be null in which case udcDefaultDir() will be
  * used.  Abort if file doesn't exist. */
 {
-struct udc2File *udcFile = udc2FileMayOpen(url, cacheDir, blockSize);
+struct gb_udcFile *udcFile = gb_udcFileMayOpen(url, cacheDir, blockSize);
 if (udcFile == NULL)
     errAbort("Couldn't open %s", url);
 return udcFile;
 }
 
 
-struct slName *udc2FileCacheFiles(char *url, char *cacheDir)
+struct slName *gb_udcFileCacheFiles(char *url, char *cacheDir)
 /* Return low-level list of files used in cache. */
 {
 char *protocol, *afterProtocol, *colon;
-struct udc2File *file;
-udc2ParseUrl(url, &protocol, &afterProtocol, &colon);
+struct gb_udcFile *file;
+gb_udcParseUrl(url, &protocol, &afterProtocol, &colon);
 if (colon == NULL)
     return NULL;
 AllocVar(file);
@@ -1200,10 +1206,10 @@ freeMem(afterProtocol);
 return list;
 }
 
-void udc2FileClose(struct udc2File **pFile)
+void gb_udcFileClose(struct gb_udcFile **pFile)
 /* Close down cached file. */
 {
-struct udc2File *file = *pFile;
+struct gb_udcFile *file = *pFile;
 if (file != NULL)
     {
     if (udcLogStream)
@@ -1259,12 +1265,12 @@ while ((c = *r++) != '\0')
 *w = '\0';
 }
 
-char *udc2PathToUrl(const char *path, char *buf, size_t size, char *cacheDir)
+char *gb_udcPathToUrl(const char *path, char *buf, size_t size, char *cacheDir)
 /* Translate path into an URL, store in buf, return pointer to buf if successful
  * and NULL if not. */
 {
 if (cacheDir == NULL)
-    cacheDir = udc2DefaultDir();
+    cacheDir = gb_udcDefaultDir();
 int offset = 0;
 if (startsWith(cacheDir, (char *)path))
     offset = strlen(cacheDir);
@@ -1287,14 +1293,14 @@ safef(buf, size, "%s://%s", protocol, afterProtocol);
 return buf;
 }
 
-long long int udc2SizeFromCache(char *url, char *cacheDir)
+long long int gb_udcSizeFromCache(char *url, char *cacheDir)
 /* Look up the file size from the local cache bitmap file, or -1 if there
  * is no cache for url. */
 {
 long long int ret = -1;
 if (cacheDir == NULL)
-    cacheDir = udc2DefaultDir();
-struct slName *sl, *slList = udc2FileCacheFiles(url, cacheDir);
+    cacheDir = gb_udcDefaultDir();
+struct slName *sl, *slList = gb_udcFileCacheFiles(url, cacheDir);
 for (sl = slList;  sl != NULL;  sl = sl->next)
     if (endsWith(sl->name, bitmapName))
 	{
@@ -1305,15 +1311,15 @@ slNameFreeList(&slList);
 return ret;
 }
 
-time_t udc2TimeFromCache(char *url, char *cacheDir)
+time_t gb_udcTimeFromCache(char *url, char *cacheDir)
 /* Look up the file datetime from the local cache bitmap file, or 0 if there
  * is no cache for url. */
 {
 time_t t = 0;
 long long int ret = -1;
 if (cacheDir == NULL)
-    cacheDir = udc2DefaultDir();
-struct slName *sl, *slList = udc2FileCacheFiles(url, cacheDir);
+    cacheDir = gb_udcDefaultDir();
+struct slName *sl, *slList = gb_udcFileCacheFiles(url, cacheDir);
 for (sl = slList;  sl != NULL;  sl = sl->next)
     if (endsWith(sl->name, bitmapName))
 	{
@@ -1326,14 +1332,14 @@ slNameFreeList(&slList);
 return t;
 }
 
-unsigned long udc2CacheAge(char *url, char *cacheDir)
+unsigned long gb_udcCacheAge(char *url, char *cacheDir)
 /* Return the age in seconds of the oldest cache file.  If a cache file is
  * missing, return the current time (seconds since the epoch). */
 {
 unsigned long now = clock1(), oldestTime = now;
 if (cacheDir == NULL)
-    cacheDir = udc2DefaultDir();
-struct slName *sl, *slList = udc2FileCacheFiles(url, cacheDir);
+    cacheDir = gb_udcDefaultDir();
+struct slName *sl, *slList = gb_udcFileCacheFiles(url, cacheDir);
 if (slList == NULL)
     return now;
 for (sl = slList;  sl != NULL;  sl = sl->next)
@@ -1356,7 +1362,7 @@ return allSet;
 }
 
 // For tests/udcTest.c debugging: not declared in udc.h, but not static either:
-boolean udc2CheckCacheBits(struct udc2File *file, int startBlock, int endBlock)
+boolean gb_udcCheckCacheBits(struct gb_udcFile *file, int startBlock, int endBlock)
 /* Warn and return TRUE if any bit in (startBlock,endBlock] is not set. */
 {
 boolean gotUnset = FALSE;
@@ -1376,7 +1382,7 @@ while (nextClearBlock < endBlock)
 return gotUnset;
 }
 
-static void fetchMissingBlocks(struct udc2File *file, struct udcBitmap *bits, 
+static void fetchMissingBlocks(struct gb_udcFile *file, struct udcBitmap *bits, 
 	int startBlock, int blockCount, int blockSize)
 /* Fetch missing blocks from remote and put them into file.  errAbort if trouble. */
 {
@@ -1399,7 +1405,7 @@ if (endPos > startPos)
     }
 }
 
-static boolean fetchMissingBits(struct udc2File *file, struct udcBitmap *bits,
+static boolean fetchMissingBits(struct gb_udcFile *file, struct udcBitmap *bits,
 	bits64 start, bits64 end, bits64 *retFetchedStart, bits64 *retFetchedEnd)
 /* Scan through relevant parts of bitmap, fetching blocks we don't already have. */
 {
@@ -1440,7 +1446,7 @@ return e >= s;
 }
 
 
-static void udcFetchMissing(struct udc2File *file, struct udcBitmap *bits, bits64 start, bits64 end)
+static void udcFetchMissing(struct gb_udcFile *file, struct udcBitmap *bits, bits64 start, bits64 end)
 /* Fetch missing pieces of data from file */
 {
 /* Call lower level routine fetch remote data that is not already here. */
@@ -1461,11 +1467,11 @@ file->startData = fetchedStart;
 file->endData = fetchedEnd;
 }
 
-static boolean udcCachePreload(struct udc2File *file, bits64 offset, bits64 size)
+static boolean udcCachePreload(struct gb_udcFile *file, bits64 offset, bits64 size)
 /* Make sure that given data is in cache - fetching it remotely if need be. 
  * Return TRUE on success. */
 {
-if (!udc2CacheEnabled())
+if (!gb_udcCacheEnabled())
     return TRUE;
 bits64 endPos = offset+size;
 struct udcBitmap *bits = file->bits;
@@ -1483,12 +1489,12 @@ else
 }
 
 #define READAHEADBUFSIZE 4096
-bits64 udc2Read(struct udc2File *file, void *buf, bits64 size)
+bits64 gb_udcRead(struct gb_udcFile *file, void *buf, bits64 size)
 /* Read a block from file.  Return amount actually read. */
 {
 file->ios.udc.numReads++;
 // if not caching, just fetch the data
-if (!udc2CacheEnabled() && !sameString(file->protocol, "transparent"))
+if (!gb_udcCacheEnabled() && !sameString(file->protocol, "transparent"))
     {
     int actualSize = file->prot->fetchData(file->url, file->offset, size, buf, file);
     file->offset += actualSize;
@@ -1589,73 +1595,73 @@ while(TRUE)
 return bytesRead;
 }
 
-void udc2MustRead(struct udc2File *file, void *buf, bits64 size)
+void gb_udcMustRead(struct gb_udcFile *file, void *buf, bits64 size)
 /* Read a block from file.  Abort if any problem, including EOF before size is read. */
 {
-bits64 sizeRead = udc2Read(file, buf, size);
+bits64 sizeRead = gb_udcRead(file, buf, size);
 if (sizeRead < size)
     errAbort("udc couldn't read %llu bytes from %s, did read %llu", size, file->url, sizeRead);
 }
 
-int udc2GetChar(struct udc2File *file)
+int gb_udcGetChar(struct gb_udcFile *file)
 /* Get next character from file or die trying. */
 {
 UBYTE b;
-udc2MustRead(file, &b, 1);
+gb_udcMustRead(file, &b, 1);
 return b;
 }
 
-bits64 udc2ReadBits64(struct udc2File *file, boolean isSwapped)
+bits64 gb_udcReadBits64(struct gb_udcFile *file, boolean isSwapped)
 /* Read and optionally byte-swap 64 bit entity. */
 {
 bits64 val;
-udc2MustRead(file, &val, sizeof(val));
+gb_udcMustRead(file, &val, sizeof(val));
 if (isSwapped)
     val = byteSwap64(val);
 return val;
 }
 
-bits32 udc2ReadBits32(struct udc2File *file, boolean isSwapped)
+bits32 gb_udcReadBits32(struct gb_udcFile *file, boolean isSwapped)
 /* Read and optionally byte-swap 32 bit entity. */
 {
 bits32 val;
-udc2MustRead(file, &val, sizeof(val));
+gb_udcMustRead(file, &val, sizeof(val));
 if (isSwapped)
     val = byteSwap32(val);
 return val;
 }
 
-bits16 udc2ReadBits16(struct udc2File *file, boolean isSwapped)
+bits16 gb_udcReadBits16(struct gb_udcFile *file, boolean isSwapped)
 /* Read and optionally byte-swap 16 bit entity. */
 {
 bits16 val;
-udc2MustRead(file, &val, sizeof(val));
+gb_udcMustRead(file, &val, sizeof(val));
 if (isSwapped)
     val = byteSwap16(val);
 return val;
 }
 
-float udc2ReadFloat(struct udc2File *file, boolean isSwapped)
+float gb_udcReadFloat(struct gb_udcFile *file, boolean isSwapped)
 /* Read and optionally byte-swap floating point number. */
 {
 float val;
-udc2MustRead(file, &val, sizeof(val));
+gb_udcMustRead(file, &val, sizeof(val));
 if (isSwapped)
     val = byteSwapFloat(val);
 return val;
 }
 
-double udc2ReadDouble(struct udc2File *file, boolean isSwapped)
+double gb_udcReadDouble(struct gb_udcFile *file, boolean isSwapped)
 /* Read and optionally byte-swap double-precision floating point number. */
 {
 double val;
-udc2MustRead(file, &val, sizeof(val));
+gb_udcMustRead(file, &val, sizeof(val));
 if (isSwapped)
     val = byteSwapDouble(val);
 return val;
 }
 
-char *udc2ReadLine(struct udc2File *file)
+char *gb_udcReadLine(struct gb_udcFile *file)
 /* Fetch next line from udc cache or NULL. */
 {
 char shortBuf[2], *longBuf = NULL, *buf = shortBuf;
@@ -1675,7 +1681,7 @@ for (i=0; ; ++i)
 	}
 
     char c;
-    bits64 sizeRead = udc2Read(file, &c, 1);
+    bits64 sizeRead = gb_udcRead(file, &c, 1);
     if (sizeRead == 0)
 	return NULL;
     buf[i] = c;
@@ -1690,7 +1696,7 @@ freeMem(longBuf);
 return retString;
 }
 
-char *udc2ReadStringAndZero(struct udc2File *file)
+char *gb_udcReadStringAndZero(struct gb_udcFile *file)
 /* Read in zero terminated string from file.  Do a freeMem of result when done. */
 {
 char shortBuf[2], *longBuf = NULL, *buf = shortBuf;
@@ -1708,7 +1714,7 @@ for (i=0; ; ++i)
 	buf = longBuf = newBuf;
 	bufSize = newBufSize;
 	}
-    char c = udc2GetChar(file);
+    char c = gb_udcGetChar(file);
     buf[i] = c;
     if (c == 0)
         break;
@@ -1718,57 +1724,59 @@ freeMem(longBuf);
 return retString;
 }
 
-char *udc2FileReadAll(char *url, char *cacheDir, size_t maxSize, size_t *retSize)
-/* Read a complete file via UDC. The cacheDir may be null in which case udc2DefaultDir()
+char *gb_udcFileReadAll(char *url, char *cacheDir, size_t maxSize, size_t *retSize)
+/* Read a complete file via UDC. The cacheDir may be null in which case gb_udcDefaultDir()
  * will be used.  If maxSize is non-zero, check size against maxSize
  * and abort if it's bigger.  Returns file data (with an extra terminal for the
  * common case where it's treated as a C string).  If retSize is non-NULL then
  * returns size of file in *retSize. Do a freeMem or freez of the returned buffer
  * when done. */
 {
-struct udc2File  *file = udc2FileOpen(url, cacheDir, 0);
+struct gb_udcFile  *file = gb_udcFileOpen(url, cacheDir, 0);
 size_t size = file->size;
 if (maxSize != 0 && size > maxSize)
-    errAbort("%s is %lld bytes, but maxSize to udc2FileReadAll is %lld",
+    errAbort("%s is %lld bytes, but maxSize to gb_udcFileReadAll is %lld",
     	url, (long long)size, (long long)maxSize);
 char *buf = needLargeMem(size+1);
-udc2MustRead(file, buf, size);
+gb_udcMustRead(file, buf, size);
 buf[size] = 0;	// add trailing zero for string processing
-udc2FileClose(&file);
+gb_udcFileClose(&file);
 if (retSize != NULL)
     *retSize = size;
 return buf;
 }
 
-struct lineFile *udc2WrapShortLineFile(char *url, char *cacheDir, size_t maxSize)
+#if 0  // drop for HAL
+struct lineFile *gb_udcWrapShortLineFile(char *url, char *cacheDir, size_t maxSize)
 /* Read in entire short (up to maxSize) url into memory and wrap a line file around it.
- * The cacheDir may be null in which case udc2DefaultDir() will be used.  If maxSize
+ * The cacheDir may be null in which case gb_udcDefaultDir() will be used.  If maxSize
  * is zero then a default value (currently 64 meg) will be used. */
 {
 if (maxSize == 0) maxSize = 64 * 1024 * 1024;
-char *buf = udc2FileReadAll(url, cacheDir, maxSize, NULL);
+char *buf = gb_udcFileReadAll(url, cacheDir, maxSize, NULL);
 return lineFileOnString(url, TRUE, buf);
 }
+#endif
 
-void udc2SeekCur(struct udc2File *file, bits64 offset)
+void gb_udcSeekCur(struct gb_udcFile *file, bits64 offset)
 /* Seek to a particular position in file. */
 {
 file->ios.udc.numSeeks++;
 file->offset += offset;
-if (udc2CacheEnabled())
+if (gb_udcCacheEnabled())
     ourMustLseek(&file->ios.sparse,file->fdSparse, offset, SEEK_CUR);
 }
 
-void udc2Seek(struct udc2File *file, bits64 offset)
+void gb_udcSeek(struct gb_udcFile *file, bits64 offset)
 /* Seek to a particular position in file. */
 {
 file->ios.udc.numSeeks++;
 file->offset = offset;
-if (udc2CacheEnabled())
+if (gb_udcCacheEnabled())
     ourMustLseek(&file->ios.sparse,file->fdSparse, offset, SEEK_SET);
 }
 
-bits64 udc2Tell(struct udc2File *file)
+bits64 gb_udcTell(struct gb_udcFile *file)
 /* Return current file position. */
 {
 return file->offset;
@@ -1841,7 +1849,7 @@ for (file = fileList; file != NULL; file = file->next)
 return results;
 }
 
-bits64 udc2Cleanup(char *cacheDir, double maxDays, boolean testOnly)
+bits64 gb_udcCleanup(char *cacheDir, double maxDays, boolean testOnly)
 /* Remove cached files older than maxDays old. If testOnly is set
  * no clean up is done, but the size of the files that would be
  * cleaned up is still. */
@@ -1856,21 +1864,21 @@ setCurrentDir(curPath);
 return result;
 }
 
-int udc2CacheTimeout()
+int gb_udcCacheTimeout()
 /* Get cache timeout (if local cache files are newer than this many seconds,
  * we won't ping the remote server to check the file size and update time). */
 {
 return cacheTimeout;
 }
 
-void udc2SetCacheTimeout(int timeout)
+void gb_udcSetCacheTimeout(int timeout)
 /* Set cache timeout (if local cache files are newer than this many seconds,
  * we won't ping the remote server to check the file size and update time). */
 {
 cacheTimeout = timeout;
 }
 
-time_t udc2UpdateTime(struct udc2File *udc)
+time_t gb_udcUpdateTime(struct gb_udcFile *udc)
 /* return udc->updateTime */
 {
 if (sameString("transparent", udc->protocol))
@@ -1885,15 +1893,15 @@ if (sameString("transparent", udc->protocol))
 return udc->updateTime;
 }
 
-off_t udc2FileSize(char *url)
+off_t gb_udcFileSize(char *url)
 /* fetch file size from given URL or local path 
  * returns -1 if not found. */
 {
-if (udc2IsLocal(url))
+if (gb_udcIsLocal(url))
     return fileSize(url);
 
 // don't go to the network if we can avoid it
-int cacheSize = udc2SizeFromCache(url, NULL);
+int cacheSize = gb_udcSizeFromCache(url, NULL);
 if (cacheSize!=-1)
     return cacheSize;
 
@@ -1921,24 +1929,24 @@ curl_easy_cleanup(curl);
 return ret;
 }
 
-boolean udc2IsLocal(char *url) 
+boolean gb_udcIsLocal(char *url) 
 /* return true if file is not a http or ftp file, just a local file */
 {
 // copied from above
 char *protocol = NULL, *afterProtocol = NULL, *colon;
-udc2ParseUrl(url, &protocol, &afterProtocol, &colon);
+gb_udcParseUrl(url, &protocol, &afterProtocol, &colon);
 freez(&protocol);
 freez(&afterProtocol);
 return colon==NULL;
 }
 
-boolean udc2Exists(char *url)
+boolean gb_udcExists(char *url)
 /* return true if a local or remote file exists */
 {
-return udc2FileSize(url)!=-1;
+return gb_udcFileSize(url)!=-1;
 }
 
-void udc2MMap(struct udc2File *file)
+void gb_udcMMap(struct gb_udcFile *file)
 /* Enable access to underlying file as memory using mmap.  udcMMapFetch
  * must be called to actually access regions of the file. */
 {
@@ -1949,7 +1957,7 @@ if (file->mmapBase == MAP_FAILED)
     errnoAbort("mmap() failed for %s", file->url);
 }
 
-void *udc2MMapFetch(struct udc2File *file, bits64 offset, bits64 size)
+void *gb_udcMMapFetch(struct gb_udcFile *file, bits64 offset, bits64 size)
 /* Return pointer to a region of the file in memory, ensuring that regions is
  * cached. udcMMap must have been called to enable access.  This must be
  * called for first access to a range of the file or erroneous (zeros) data
@@ -1961,19 +1969,19 @@ if (file->mmapBase == NULL)
 if ((offset + size) > file->size)
     errAbort("udcMMapFetch on offset %lld for %lld bytes exceeds length of file %lld on %s",
              offset, size, file->size, file->url);
-if (udc2CacheEnabled() && !sameString(file->protocol, "transparent"))
+if (gb_udcCacheEnabled() && !sameString(file->protocol, "transparent"))
     udcCachePreload(file, offset, size);
 return ((char*)file->mmapBase) + offset;
 }
 
-void udc2VerboseSetLevel(int l)
+void gb_udcVerboseSetLevel(int l)
 /* set the verbose level; */
 {
 verboseSetLevel(l);
 }
 
-void udc2FreeMem(void *mem)
-/* free memory allocated by udc2 functions */
+void gb_udcFreeMem(void *mem)
+/* free memory allocated by gb_udc functions */
 {
 freeMem(mem);
 }

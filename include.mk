@@ -98,20 +98,8 @@ endif
 
 endif
 
-# add compiler flag and kent paths if udc is enabled
-# relies on KENTSRC containing path to top level kent/src dir
-# and MACHTYPE being specified.
-# This MUST follow PHAST defs, as they both have a gff.h
-ifdef ENABLE_UDC
-    #  Find htslib as in kent/src/inc/common.mk:
-    MACHTYPE = x86_64
-    CXXFLAGS += -DENABLE_UDC
-    CFLAGS += -DENABLE_UDC
-    UDCCXXFLAGS += -I${KENTSRC}/inc -I${KENTSRC}/htslib -pthread
-    UDCCFLAGS += -Wall -Werror -std=c99 -I${KENTSRC}/inc -I${KENTSRC}/htslib
-    LDLIBS += ${KENTSRC}/lib/${MACHTYPE}/jkweb.a  ${KENTSRC}/htslib/libhts.a -lcurl -lssl -lcrypto -pthread
-endif
-
+# add compiler flag to enable UDC
+ENABLE_UDC = 1
 
 
 # test includes and libs uses buy several modules

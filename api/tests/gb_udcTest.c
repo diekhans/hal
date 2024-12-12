@@ -8,11 +8,11 @@
 //                           (kernel handles buffering)
 
 #include <sys/wait.h>
-#include "common.h"
+#include "gb_common.h"
 #include "errAbort.h"
 #include "options.h"
 #include "portable.h"
-#include "udc2.h"
+#include "gb_udc.h"
 
 
 static struct optionSpec options[] = {
@@ -88,17 +88,17 @@ return gotError;
 char *getSparseFileName(char *url)
 /* Return the path to sparseData cache file for url. */
 {
-struct slName *sl, *cacheFiles = udc2FileCacheFiles(url, udc2DefaultDir());
+struct slName *sl, *cacheFiles = gb_udcFileCacheFiles(url, gb_udcDefaultDir());
 char *sparseFileName = NULL;
 for (sl = cacheFiles; sl != NULL; sl = sl->next)
     if (endsWith(sl->name, "sparseData"))
 	sparseFileName = sl->name;
 if (sparseFileName == NULL)
-    errAbort("can't find sparseData file in udc2FileCacheFiles(%s) results", url);
+    errAbort("can't find sparseData file in gb_udcFileCacheFiles(%s) results", url);
 return sparseFileName;
 }
 
-boolean readAndTest(struct udc2File *udcf, bits64 offset, bits64 len, char *localCopy, char *url)
+boolean readAndTest(struct gb_udcFile *udcf, bits64 offset, bits64 len, char *localCopy, char *url)
 /* Read len bytes starting at offset in udcf.  Compare both the bytes returned,
  * and bytes directly read from the sparseData file, with data from the same 
  * location in our local copy of the URL data. */
@@ -137,14 +137,14 @@ openSeekRead(localCopy, offset, len, bufRef);
 // Get data from udcFile object and compare to reference:
 if (mmapAccess)
     {
-    char *ptr = udc2MMapFetch(udcf, offset, len);
+    char *ptr = gb_udcMMapFetch(udcf, offset, len);
     memcpy(bufTest, ptr, len);
     }
 else
     {
-    udc2Seek(udcf, offset);
-    bits64 bytesRead = udc2Read(udcf, bufTest, len);
-    // udc2Read does a mustRead, and we have checked offset+len, so this should never happen,
+    gb_udcSeek(udcf, offset);
+    bits64 bytesRead = gb_udcRead(udcf, bufTest, len);
+    // gb_udcRead does a mustRead, and we have checked offset+len, so this should never happen,
     // but test anyway:
     if (bytesRead < len)
         errAbort("Got %lld bytes instead of %lld from %s @%lld", bytesRead, len, url, offset);
@@ -181,7 +181,7 @@ INLINE bits64 randomBlockSize()
 return MIN_BLK_SIZE + (bits64)((MAX_BLK_SIZE - MIN_BLK_SIZE) * myDrand());
 }
 
-boolean readAndTestBlocks(struct udc2File *udcf, bits64 *retOffset, int numBlks, int *retBlksRead,
+boolean readAndTestBlocks(struct gb_udcFile *udcf, bits64 *retOffset, int numBlks, int *retBlksRead,
 			 char *localCopy, char *url)
 /* Read numBlks randomly sized blocks from udcf starting at *retOffset and compare
  * to localCopy.  *retBlksRead starts as the number of randomly sized blocks we have
@@ -215,7 +215,7 @@ return gotError;
 
 // These are defined in udc.c but not udc.h:
 #define udcBlockSize (8*1024)
-boolean udc2CheckCacheBits(struct udc2File *file, int startBlock, int endBlock);
+boolean gb_udcCheckCacheBits(struct gb_udcFile *file, int startBlock, int endBlock);
 /* Warn and return TRUE (error) if any bit in (startBlock,endBlock] is not set. */
 
 static boolean checkCacheFiles(bits64 accessStart, bits64 accessEnd, char *url, char *localCopy)
@@ -252,22 +252,22 @@ for (i = startBlock;  i < endBlock;  i++)
 mustCloseFd(&fdLocal);
 mustCloseFd(&fdSparse);
 // Check bitmap bits too:
-struct udc2File *udcf = udc2FileOpen(url, udc2DefaultDir(), blockSize);
+struct gb_udcFile *udcf = gb_udcFileOpen(url, gb_udcDefaultDir(), blockSize);
 verbose(1, "checking bitmap bits (%d..%d].\n", startBlock, endBlock);
-udc2CheckCacheBits(udcf, startBlock, endBlock);
-udc2FileClose(&udcf);
+gb_udcCheckCacheBits(udcf, startBlock, endBlock);
+gb_udcFileClose(&udcf);
 return gotError;
 }
 
 boolean testReadAheadBufferMode(char *url, char *localCopy, int mode)
-/* Open a udc2File, read different random locations, and check for errors. */
+/* Open a gb_udcFile, read different random locations, and check for errors. */
 {
 boolean gotError = FALSE;
 bits64 fSize = fileSize(localCopy);
 
-struct udc2File *udcf = udc2FileOpen(url, udc2DefaultDir(), blockSize);
+struct gb_udcFile *udcf = gb_udcFileOpen(url, gb_udcDefaultDir(), blockSize);
 if (mmapAccess)
-    udc2MMap(udcf);
+    gb_udcMMap(udcf);
 bits64 offset = 0;
 if (mode == -1)
    offset = 0 + 8192 * myDrand();
@@ -302,18 +302,18 @@ for(i=0; i<100; ++i)
 
     }
 
-udc2FileClose(&udcf);
+gb_udcFileClose(&udcf);
 return gotError;
 
 }
 
 bool testSize(char *url, long int  size) 
 {
-return (udc2FileSize(url)==size)   ;
+return (gb_udcFileSize(url)==size)   ;
 }
 
 boolean testReadAheadBuffer(char *url, char *localCopy)
-/* Open a udc2File, read different random locations, and check for errors. */
+/* Open a gb_udcFile, read different random locations, and check for errors. */
 {
 boolean gotError = FALSE;
 gotError |= testReadAheadBufferMode(url, localCopy, -1);  // near beginning of file
@@ -324,17 +324,17 @@ return gotError;
 
 
 boolean testInterleaved(char *url, char *localCopy)
-/* Open two udc2File handles to the same file, read probably-different random locations,
+/* Open two gb_udcFile handles to the same file, read probably-different random locations,
  * read from probably-overlapping random locations, and check for errors. */
 {
 boolean gotError = FALSE;
 bits64 size = fileSize(localCopy);
 
 
-// First, read some bytes from udc2File udcf1.
-struct udc2File *udcf1 = udc2FileOpen(url, udc2DefaultDir(), blockSize);
+// First, read some bytes from gb_udcFile udcf1.
+struct gb_udcFile *udcf1 = gb_udcFileOpen(url, gb_udcDefaultDir(), blockSize);
 if (mmapAccess)
-    udc2MMap(udcf1);
+    gb_udcMMap(udcf1);
 int blksRead1 = 0;
 bits64 offset1 = randomStartOffset(size);
 
@@ -342,9 +342,9 @@ gotError |= readAndTestBlocks(udcf1, &offset1, 2, &blksRead1, localCopy, url);
 
 // While keeping udcf1 open, create udcf2 on the same URL, and read from a 
 // (probably) different location:
-struct udc2File *udcf2 = udc2FileOpen(url, udc2DefaultDir(), blockSize);
+struct gb_udcFile *udcf2 = gb_udcFileOpen(url, gb_udcDefaultDir(), blockSize);
 if (mmapAccess)
-    udc2MMap(udcf2);
+    gb_udcMMap(udcf2);
 int blksRead2 = 0;
 bits64 offset2 = randomStartOffset(size);
 
@@ -380,8 +380,8 @@ while (blksRead1 < MAX_BLOCKS || blksRead2 < MAX_BLOCKS)
 	gotError |= readAndTestBlocks(udcf2, &offset2, n, &blksRead2, localCopy, url);
 	}
     }
-udc2FileClose(&udcf1);
-udc2FileClose(&udcf2);
+gb_udcFileClose(&udcf1);
+gb_udcFileClose(&udcf2);
 verbose(1,"checkCacheFiles\n");
 gotError |= checkCacheFiles(sameOffset, max(offset1, offset2), url, localCopy);
 return gotError;
@@ -401,23 +401,23 @@ if (kidPid < 0)
 else if (kidPid == 0)
     {
     // child: access url and then exit, to pass control back to parent.
-    struct udc2File *udcf = udc2FileOpen(url, udc2DefaultDir(), blockSize);
+    struct gb_udcFile *udcf = gb_udcFileOpen(url, gb_udcDefaultDir(), blockSize);
     if (mmapAccess)
-        udc2MMap(udcf);
+        gb_udcMMap(udcf);
     int blksRead = 0;
     gotErrorChild = readAndTestBlocks(udcf, &offsetParent, MAX_BLOCKS, &blksRead, localCopy, url);
-    udc2FileClose(&udcf);
+    gb_udcFileClose(&udcf);
     exit(0);
     }
 else
     {
     // parent: access url, wait for child, do post-checking.
-    struct udc2File *udcf = udc2FileOpen(url, udc2DefaultDir(), blockSize);
+    struct gb_udcFile *udcf = gb_udcFileOpen(url, gb_udcDefaultDir(), blockSize);
     if (mmapAccess)
-        udc2MMap(udcf);
+        gb_udcMMap(udcf);
     int blksRead = 0;
     gotErrorParent = readAndTestBlocks(udcf, &offsetChild, MAX_BLOCKS, &blksRead, localCopy, url);
-    udc2FileClose(&udcf);
+    gb_udcFileClose(&udcf);
     // wait for child to finish:
     int childStatus;
     int retPid = waitpid(kidPid, &childStatus, 0);
@@ -464,7 +464,7 @@ char rmcmd[512];
 safef(rmcmd, sizeof(rmcmd), "rm -rf %s", tmp);
 if (system(rmcmd) != 0)
     errAbort("command failed: %s", rmcmd);
-udc2SetDefaultDir(tmp);
+gb_udcSetDefaultDir(tmp);
 if (seed == 0)
     {
     long now = clock1();

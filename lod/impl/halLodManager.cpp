@@ -15,7 +15,7 @@
 #include <sstream>
 
 #ifdef ENABLE_UDC
-#include "udc2.h"
+#include "halGbUdc.h"
 #endif
 
 using namespace std;
@@ -49,12 +49,12 @@ void LodManager::loadLODFile(const string &lodPath, const CLParser *options) {
     char *cpath = const_cast<char *>(lodPath.c_str());
 
     size_t cbufSize = 0;
-    char *cbuffer = udc2FileReadAll(cpath, NULL, 100000, &cbufSize);
+    char *cbuffer = halGbUdcFileReadAll(cpath, NULL, 100000, &cbufSize);
     if (cbuffer == NULL) {
         throw hal_exception("Error udc-opening " + lodPath);
     }
     string cbufCpy(cbuffer);
-    udc2FreeMem(cbuffer);
+    halGbUdcFreeMem(cbuffer);
     stringstream ifile(cbufCpy);
 #else
     ifstream ifile(lodPath.c_str());

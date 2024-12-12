@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 #include "common.h"
-#include "udc2.h"
+#include "halGbUdc.h"
 #include "verbose.h"
 #include <pthread.h>
 #ifdef __cplusplus

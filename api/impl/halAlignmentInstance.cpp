@@ -16,7 +16,7 @@
 #include <fstream>
 #include <iostream>
 #ifdef ENABLE_UDC
-#include "udc2.h"
+#include "halGbUdc.h"
 #endif
 
 using namespace std;
@@ -77,13 +77,13 @@ static const int DETECT_INITIAL_NUM_BYTES = 64;
 
 static std::string udcGetInitialBytes(const std::string &path, const CLParser *options) {
 #ifdef ENABLE_UDC
-    struct udc2File *udcFile = udc2FileMayOpen(const_cast<char *>(path.c_str()), NULL, UDC_BLOCK_SIZE);
+    struct halGbUdcFile *udcFile = halGbUdcFileMayOpen(const_cast<char *>(path.c_str()), NULL, UDC_BLOCK_SIZE);
     if (udcFile == NULL) {
         throw hal_exception("can't open via UDC: " + path);
     }
     char buf[DETECT_INITIAL_NUM_BYTES];
-    bits64 bytesRead = udc2Read(udcFile, buf, DETECT_INITIAL_NUM_BYTES);
-    udc2FileClose(&udcFile);
+    bits64 bytesRead = halGbUdcRead(udcFile, buf, DETECT_INITIAL_NUM_BYTES);
+    halGbUdcFileClose(&udcFile);
     return string(buf, 0, bytesRead);
 #else
     throw hal_exception("URL to HAL file supplied however UDC is not compiled into HAL library: " + path);

@@ -9,7 +9,7 @@
 #ifdef ENABLE_UDC
 extern "C" {
 #include "common.h"
-#include "udc2.h"
+#include "halGbUdc.h"
 }
 #endif
 
@@ -277,7 +277,7 @@ namespace hal {
         virtual void fetch(size_t offset, size_t accessSize) const;
 
       private:
-        struct udc2File *_udcFile;
+        struct halGbUdcFile *_udcFile;
     };
 }
 
@@ -287,15 +287,15 @@ hal::MMapFileUdc::MMapFileUdc(const std::string &alignmentPath, unsigned mode, s
     if (_mode & WRITE_ACCESS) {
         throw hal_exception("write access not supported for UDC:" + alignmentPath);
     }
-    _udcFile = udc2FileMayOpen(const_cast<char *>(alignmentPath.c_str()), NULL, UDC_BLOCK_SIZE);
+    _udcFile = halGbUdcFileMayOpen(const_cast<char *>(alignmentPath.c_str()), NULL, UDC_BLOCK_SIZE);
     if (_udcFile == NULL) {
         throw hal_exception("can't open " + alignmentPath);
     }
-    udc2MMap(_udcFile);
+    halGbUdcMMap(_udcFile);
 
     // get base point and fetch header
-    _basePtr = udc2MMapFetch(_udcFile, 0, sizeof(MMapHeader));
-    _fileSize = udc2SizeFromCache(const_cast<char *>(_alignmentPath.c_str()), NULL);
+    _basePtr = halGbUdcMMapFetch(_udcFile, 0, sizeof(MMapHeader));
+    _fileSize = halGbUdcSizeFromCache(const_cast<char *>(_alignmentPath.c_str()), NULL);
     loadHeader(false);
 }
 
@@ -304,14 +304,14 @@ void hal::MMapFileUdc::close() {
     if (_basePtr == NULL) {
         throw hal_exception(_alignmentPath + ": MMapFile::close() called on closed file");
     }
-    udc2FileClose(&_udcFile);
+    halGbUdcFileClose(&_udcFile);
 }
 
 /* Destructor. write fields to header and close.  If write access and close
  * has not been called, file will me left mark dirty */
 hal::MMapFileUdc::~MMapFileUdc() {
     if (_udcFile != NULL) {
-        udc2FileClose(&_udcFile);
+        halGbUdcFileClose(&_udcFile);
     }
 }
 
@@ -322,7 +322,7 @@ void hal::MMapFileUdc::fetch(size_t offset, size_t accessSize) const {
         accessSize = _fileSize - offset;
     }
 
-    udc2MMapFetch(_udcFile, offset, accessSize);
+    halGbUdcMMapFetch(_udcFile, offset, accessSize);
 }
 
 #endif

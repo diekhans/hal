@@ -33,7 +33,7 @@
 
 extern "C" {
 #include "common.h"
-#include "udc2.h"
+#include "halGbUdc.h"
 }
 #include "halCommon.h"
 #include "hdf5.h"
@@ -96,7 +96,7 @@ typedef enum {
  */
 typedef struct H5FD_udc_fuse_t {
     H5FD_t pub;               /* public stuff, must be first      */
-    udc2File *ufp;            /* the file handle                  */
+    halGbUdcFile *ufp;        /* the file handle                  */
     int fd;                   /* file descriptor (for truncate)   */
     haddr_t eoa;              /* end of allocated region          */
     haddr_t eof;              /* end of file; current file size   */
@@ -142,9 +142,9 @@ typedef struct H5FD_udc_fuse_t {
 
 /* Structs below specify seek / tell / truncate infterface for
  * different platforms.  We override all with udc methods */
-static int udcFseekWrapper(struct udc2File *file, long long offset, int whence) {
+static int udcFseekWrapper(struct halGbUdcFile *file, long long offset, int whence) {
     assert(whence == SEEK_SET);
-    udc2Seek(file, offset);
+    halGbUdcSeek(file, offset);
     return 0;
 }
 
@@ -368,7 +368,7 @@ herr_t H5Pset_fapl_udc_fuse(hid_t fapl_id) {
  *-------------------------------------------------------------------------
  */
 static H5FD_t *H5FD_udc_fuse_open(const char *name, unsigned flags, hid_t fapl_id, haddr_t maxaddr) {
-    udc2File *f = NULL;
+    halGbUdcFile *f = NULL;
     unsigned write_access = 0; /* File opened with write access? */
     H5FD_udc_fuse_t *file = NULL;
     static const char *func = "H5FD_udc_fuse_open"; /* Function Name for error reporting */
@@ -390,14 +390,14 @@ static H5FD_t *H5FD_udc_fuse_open(const char *name, unsigned flags, hid_t fapl_i
 
             /* Attempt to open/create the file */
 
-            f = udc2FileMayOpen((char *)name, (char *)H5FD_UDC_FUSE_CACHE_PATH, hal::UDC_BLOCK_SIZE);
+            f = halGbUdcFileMayOpen((char *)name, (char *)H5FD_UDC_FUSE_CACHE_PATH, hal::UDC_BLOCK_SIZE);
 
     if (!f)
         H5Epush_ret(func, H5E_ERR_CLS, H5E_IO, H5E_CANTOPENFILE, "fopen failed", NULL)
 
             /* Build the return value */
             if (NULL == (file = (H5FD_udc_fuse_t *)calloc((size_t)1, sizeof(H5FD_udc_fuse_t)))) {
-            udc2FileClose(&f);
+            halGbUdcFileClose(&f);
             H5Epush_ret(func, H5E_ERR_CLS, H5E_RESOURCE, H5E_NOSPACE, "memory allocation failed", NULL)
         } /* end if */
     file->ufp = f;
@@ -407,7 +407,7 @@ static H5FD_t *H5FD_udc_fuse_open(const char *name, unsigned flags, hid_t fapl_i
     file->write_access = write_access; /* Note the write_access for later */
     /* note -- do we add interface to modify cache dir? */
 
-    long long int udcSizeVal = udc2SizeFromCache((char *)name, (char *)H5FD_UDC_FUSE_CACHE_PATH);
+    long long int udcSizeVal = halGbUdcSizeFromCache((char *)name, (char *)H5FD_UDC_FUSE_CACHE_PATH);
     file->eof = udcSizeVal;
     /* everything about udc cache works for files and urls but the above,
      * which only works for ursl.  if it fails, we try as a file*/
@@ -449,7 +449,7 @@ static herr_t H5FD_udc_fuse_close(H5FD_t *_file) {
     /* Clear the error stack */
     H5Eclear2(H5E_DEFAULT);
 
-    udc2FileClose(&file->ufp);
+    halGbUdcFileClose(&file->ufp);
 
     return 0;
 } /* end H5FD_udc_fuse_close() */
@@ -741,7 +741,7 @@ static herr_t H5FD_udc_fuse_read(H5FD_t *_file, H5FD_mem_t type, hid_t dxpl_id, 
         else
             bytes_in = size;
 
-        bytes_read = udc2Read(file->ufp, buf, item_size * bytes_in);
+        bytes_read = halGbUdcRead(file->ufp, buf, item_size * bytes_in);
 
         /*
         if(0 == bytes_read && ferror(file->ufp)) {
@@ -750,7 +750,7 @@ static herr_t H5FD_udc_fuse_read(H5FD_t *_file, H5FD_mem_t type, hid_t dxpl_id, 
             H5Epush_ret(func, H5E_ERR_CLS, H5E_IO, H5E_READERROR, "fread failed", -1)
         }*/
 
-        if (0 == bytes_read && udc2Tell(file->ufp) >= file->eof) {
+        if (0 == bytes_read && halGbUdcTell(file->ufp) >= file->eof) {
             /* end of file but not end of format address space */
             memset((unsigned char *)buf, 0, size);
             break;
